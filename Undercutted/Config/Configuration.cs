@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
-namespace HotbarTimers
+namespace Undercutted
 {
     [Serializable]
     public class Configuration : IPluginConfiguration
@@ -24,6 +24,4 @@ namespace HotbarTimers
             this.pluginInterface.SavePluginConfig(this);
         }
     }
-
-    public enum FontType { Type1, Type2, Type3, Type4, Type5 }
 }
