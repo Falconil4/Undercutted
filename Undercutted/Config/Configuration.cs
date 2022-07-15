@@ -10,7 +10,9 @@ namespace Undercutted
     public class Configuration : IPluginConfiguration
     {
         public int Version { get; set; } = 0;
-                
+
+        public List<string> ItemNames { get; set; } = new();
+        
         [NonSerialized]
         private DalamudPluginInterface? pluginInterface;
         public void Initialize(DalamudPluginInterface pluginInterface)

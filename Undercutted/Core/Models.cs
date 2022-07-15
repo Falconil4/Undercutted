@@ -18,16 +18,18 @@ namespace Undercutted.Core
 
     public class ItemCurrentData
     {
-        public ItemCurrentData(uint itemID, List<Listing> listings)
+        public ItemCurrentData(uint itemID, long lastUploadTime, List<Listing> listings)
         {
             ItemID = itemID;
+            LastUploadTime = lastUploadTime;
             Listings = listings;
         }
 
         public uint ItemID { get; init; }
-        public string? ItemName { get; set; }
+        public long LastUploadTime { get; init; }
+        public DateTime LastUpload => DateTimeOffset.FromUnixTimeMilliseconds(LastUploadTime).LocalDateTime;
         public List<Listing> Listings { get; init; }
-
+        public string? ItemName { get; set; }
     }
 
     public class Listing

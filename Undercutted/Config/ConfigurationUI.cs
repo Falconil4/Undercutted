@@ -1,4 +1,5 @@
 ﻿using ImGuiNET;
+using Lumina.Excel;
 using Lumina.Excel.GeneratedSheets;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,8 @@ namespace Undercutted
             set { this.settingsVisible = value; }
         }
 
+        private bool UpdateInProgress { get; set; } = false;
+
         private MarketBoardData? MarketBoardData { get; set; }
 
         public ConfigurationUI(Configuration configuration)
@@ -30,6 +33,7 @@ namespace Undercutted
 
         public void Dispose() {}
 
+        private static string SearchText = "";
         public void Draw()
         {
             if (!SettingsVisible)
@@ -37,50 +41,106 @@ namespace Undercutted
                 return;
             }
 
-            ImGui.SetNextWindowSize(new Vector2(500, 200), ImGuiCond.Appearing);
             if (ImGui.Begin("Undercutted", ref this.settingsVisible,
                 ImGuiWindowFlags.NoCollapse))
             {
-                if (ImGui.Button("Refresh")) {
+                if (ImGui.Button(UpdateInProgress ? "Refreshing..." : "Refresh prices")) {
                     UpdateData();
                     Draw();
                 }
 
-                if (ImGui.BeginTable("ItemsTable", 4, ImGuiTableFlags.Borders))
+                List<string> columns = new() { "Item", "Listings #", "Lowest price", "By", "Delete", "Last update" };
+                if (ImGui.BeginTable("ItemsTable", columns.Count, ImGuiTableFlags.Borders))
                 {
                     ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch);
                     ImGui.TableSetupColumn("Listings #", ImGuiTableColumnFlags.WidthFixed);
                     ImGui.TableSetupColumn("Lowest price", ImGuiTableColumnFlags.WidthFixed);
                     ImGui.TableSetupColumn("By", ImGuiTableColumnFlags.WidthFixed);
+                    ImGui.TableSetupColumn("Delete", ImGuiTableColumnFlags.WidthFixed);
                     ImGui.TableHeadersRow();
 
-                    for (int row = 0; row < MarketBoardData?.Items?.Count; row++)
+                    for (int row = 0; row < Configuration.ItemNames.Count; row++)
                     {
-                        ItemCurrentData item = MarketBoardData.Items[row];
-                        if (item.ItemID == 0) continue;
-                        int columnIndex = 0;
                         ImGui.TableNextRow();
 
+                        string itemName = Configuration.ItemNames[row];
+                        ItemCurrentData? item = MarketBoardData?.Items.FirstOrDefault(item => item.ItemName == itemName);
+
                         //item name
-                        ImGui.TableSetColumnIndex(columnIndex++);
+                        ImGui.TableNextColumn();
                         ImGui.SetNextItemWidth(-1);
-                        ImGui.Text(item.ItemName?.ToString());
+                        
+                        ImGui.Text(itemName);
+                        ImGui.SameLine();
+                        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 20);
+                        if (ImGui.BeginCombo($"###{row}itemNameCombo", string.Empty, ImGuiComboFlags.NoPreview))
+                        {
+                            ImGui.InputText("Search", ref SearchText, 512);
 
-                        //listing #
-                        ImGui.TableSetColumnIndex(columnIndex++);
-                        ImGui.Text(item.Listings.Count.ToString());
+                            ExcelSheet<Item>? list = Undercutted.GameItemsList;
+                            if (list != null)
+                            {
+                                foreach (Item gameItem in list)
+                                {
+                                    string name = gameItem.Name.RawString;
+                                    if (!String.IsNullOrEmpty(SearchText) && !name.Contains(SearchText, StringComparison.OrdinalIgnoreCase)) continue;
+                                    bool selected = name.Equals(itemName, StringComparison.OrdinalIgnoreCase);
 
-                        //Lowest price
-                        ImGui.TableSetColumnIndex(columnIndex++);
-                        ImGui.Text(item.Listings[0].PricePerUnit.ToString());
+                                    if (ImGui.Selectable(name, selected))
+                                    {
+                                        Configuration.ItemNames[row] = name;
+                                        SaveConfig();
+                                    }
+                                }
+                            }
+                            
+                            ImGui.EndCombo();
+                        }
 
-                        //By
-                        ImGui.TableSetColumnIndex(columnIndex++);
-                        ImGui.SetNextItemWidth(-1);
-                        ImGui.Text(item.Listings[0].RetainerName.ToString());
+                        if (item != null && item.Listings.Count > 0)
+                        {
+                            //listing #
+                            ImGui.TableNextColumn();
+                            string listingsCount = item.Listings.Count.ToString();
+                            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() -
+                                ImGui.CalcTextSize(listingsCount).X - 5);
+                            ImGui.Text(listingsCount);
+
+                            //Lowest price
+                            ImGui.TableNextColumn();
+                            string price = item.Listings[0].PricePerUnit.ToString("#,##");
+                            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetColumnWidth() - 
+                                ImGui.CalcTextSize(price).X - 5);
+                            ImGui.Text(price);
+
+                            //By
+                            ImGui.TableNextColumn();
+                            ImGui.SetNextItemWidth(-1);
+                            ImGui.Text(item.Listings[0].RetainerName.ToString());
+
+                            //Last update
+                            ImGui.TableNextColumn();
+                            ImGui.Text(item.LastUpload.ToString());
+                        }
+
+                        //Delete
+                        ImGui.TableSetColumnIndex(columns.Count - 1);
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(255, 0, 0, 255));
+                        if (ImGui.Button($"X###{row}delete", new Vector2(-1, 20)))
+                        {
+                            Configuration.ItemNames.RemoveAt(row);
+                            SaveConfig();
+                        };
+                        ImGui.PopStyleColor(1);
+
                     }
 
                     ImGui.EndTable();
+                }
+
+                if (ImGui.Button("Add new item"))
+                {
+                    Configuration.ItemNames.Add("");
                 }
 
                 ImGui.End();
@@ -89,17 +149,20 @@ namespace Undercutted
 
         private void SaveConfig()
         {
+            Configuration.ItemNames.RemoveAll(name => String.IsNullOrEmpty(name));
             Configuration.Save();
             Undercutted.Configuration = Configuration;
         }
 
         private async void UpdateData()
         {
-            string? playerHomeWorld = Undercutted.ClientState?.LocalPlayer?.HomeWorld?.GameData?.Name;
+            string? playerHomeWorld = Undercutted.ClientState?.LocalPlayer?.HomeWorld?.GameData?.Name?.RawString;
             if (playerHomeWorld == null) return;
-
-            List<string> itemNames = new() { "Perfect Mortar" };
-            MarketBoardData = await ApiConsumer.GetData(playerHomeWorld, itemNames);
+            if (Configuration.ItemNames.Count == 0) return;
+            
+            UpdateInProgress = true;
+            MarketBoardData = await ApiConsumer.GetData(playerHomeWorld, Configuration.ItemNames);
+            UpdateInProgress = false;
         }
     }
 }
